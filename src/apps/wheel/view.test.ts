@@ -6,6 +6,9 @@ import { mountWheel, SPIN_MS, wheelSvg } from "./view";
 
 const ctx = { seed: "ROUE01", today: "2026-10-15" };
 
+/** jsdom (cssstyle) arrondit les nombres CSS à deux décimales : on compare à la valeur arrondie. */
+const rotation = (degrees: number): string => `rotate(${Math.round(degrees * 100) / 100}deg)`;
+
 describe("wheelSvg", () => {
   it("affiche un message tant qu'il y a moins de 2 cases", () => {
     expect(wheelSvg([{ id: "e1", label: "Seul" }])).toContain("Ajoute au moins 2 cases");
@@ -61,7 +64,7 @@ describe("mountWheel", () => {
     spinButton().click();
     expect(spinButton().disabled).toBe(true);
     expect(spinButton().textContent).toBe("La roue tourne…");
-    expect(q<SVGGElement>("#wheel-rotor").style.transform).toBe(`rotate(${plan.rotation}deg)`);
+    expect(q<SVGGElement>("#wheel-rotor").style.transform).toBe(rotation(plan.rotation));
     expect(q<SVGGElement>("#wheel-rotor").style.transition).toContain(`${SPIN_MS}ms`);
     expect(root.querySelector<HTMLButtonElement>(".chip-remove")!.disabled).toBe(true);
 
@@ -79,7 +82,7 @@ describe("mountWheel", () => {
     const first = planSpin(createRng(`${ctx.seed}:spin:1`), expected.entries.length, 0);
     const second = planSpin(createRng(`${ctx.seed}:spin:2`), expected.entries.length, first.rotation);
     spinButton().click();
-    expect(q<SVGGElement>("#wheel-rotor").style.transform).toBe(`rotate(${second.rotation}deg)`);
+    expect(q<SVGGElement>("#wheel-rotor").style.transform).toBe(rotation(second.rotation));
   });
 
   it("retire le gagnant de la roue si l'option est cochée, et remet la roue à zéro", () => {
