@@ -24,6 +24,27 @@ describe("createRng", () => {
     expect(Array.from({ length: 5 }, a.next)).toEqual(Array.from({ length: 5 }, b.next));
   });
 
+  it("produit exactement la suite de référence (mulberry32)", () => {
+    const rng = createRng("ABC");
+    expect([rng.next(), rng.next(), rng.next()]).toEqual([0.71883997740224, 0.2719009821303189, 0.9464941904880106]);
+  });
+
+  it("shuffle donne la permutation de référence et consomme n - 1 tirages", () => {
+    expect(createRng("ABC").shuffle([1, 2, 3, 4, 5, 6])).toEqual([3, 1, 6, 4, 2, 5]);
+    const a = createRng("ABC");
+    a.shuffle([1, 2, 3]);
+    const b = createRng("ABC");
+    b.next();
+    b.next();
+    expect(a.next()).toBe(b.next());
+  });
+
+  it("chance est strictement inférieure : p égal au tirage donne faux", () => {
+    const tirage = createRng("ABC").next();
+    expect(createRng("ABC").chance(tirage)).toBe(false);
+    expect(createRng("ABC").chance(tirage + 1e-9)).toBe(true);
+  });
+
   it("donne une suite différente pour une autre graine", () => {
     expect(createRng("A").next()).not.toBe(createRng("B").next());
   });

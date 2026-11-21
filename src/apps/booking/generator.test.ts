@@ -49,6 +49,36 @@ const input = (overrides: Partial<ReservationInput> = {}): ReservationInput => (
   ...overrides,
 });
 
+describe("generateBooking (valeurs de référence)", () => {
+  const gold = Array.from({ length: 40 }, (_, i) => generateBooking(createRng(`B${i}`), TODAY));
+
+  it("propose trois menus adultes numérotés m1…m3, plus le menu enfant, à des prix ronds", () => {
+    for (const b of gold) {
+      expect(b.menus.map((m) => m.id)).toEqual(["m1", "m2", "m3", "enfant"]);
+      expect(b.menus[3].label).toBe("Menu enfant (moins de 12 ans)");
+      for (const m of b.menus) {
+        expect(m.price % 50).toBe(0);
+        expect(m.price).toBeGreaterThan(0);
+        expect(m.price).toBeLessThanOrEqual(5000);
+      }
+      expect(Math.abs(b.menus[3].price - 0.45 * b.menus[0].price)).toBeLessThanOrEqual(50);
+    }
+  });
+
+  it("numérote les réservations r1…rn (dans le désordre une fois triées par date)", () => {
+    for (const b of gold) {
+      expect(b.reservations.map((r) => r.id).sort()).toEqual(b.reservations.map((_, i) => `r${i + 1}`).sort());
+    }
+  });
+
+  it("remplit les salles et règle les réservations selon des totaux de référence", () => {
+    const reservations = gold.flatMap((b) => b.reservations);
+    expect(gold.reduce((sum, b) => sum + seatsTaken(b), 0)).toBe(1771);
+    expect(reservations).toHaveLength(608);
+    expect(reservations.filter((r) => r.paid)).toHaveLength(399);
+  });
+});
+
 describe("generateBooking", () => {
   it("est déterministe pour une graine donnée", () => {
     expect(generateBooking(createRng("A"), TODAY)).toEqual(generateBooking(createRng("A"), TODAY));
@@ -137,6 +167,17 @@ describe("calculs", () => {
 
   it("distingue le montant attendu de l'encaissé", () => {
     expect(revenue(b)).toEqual({ expected: 4900 + 6000, collected: 4900 });
+  });
+});
+
+describe("addReservation (e-mail)", () => {
+  const base = generateBooking(createRng("A"), TODAY);
+  const input = (email: string) => ({ name: "Zoé", email, phone: "", menus: { m1: 1 }, allergies: [] });
+
+  it("exige un e-mail entier : ni texte avant, ni texte après", () => {
+    expect(addReservation(base, input("a b@c.de"), TODAY, "x")).toBe("badEmail");
+    expect(addReservation(base, input("a@b.cd e"), TODAY, "x")).toBe("badEmail");
+    expect(addReservation(base, input("a@b.cd"), TODAY, "x")).not.toBe("badEmail");
   });
 });
 
