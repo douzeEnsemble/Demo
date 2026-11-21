@@ -13,6 +13,17 @@ import {
 } from "./generator";
 
 const TODAY = "2026-10-15";
+const EXPECTED: Record<string, number> = {
+  products: 503,
+  movements: 9239,
+  sale: 8195,
+  loss: 212,
+  reception: 832,
+  price: 430190,
+  threshold: 3898,
+  quantity: 6667,
+  todayReceptions: 0,
+};
 const SEEDS = Array.from({ length: 30 }, (_, i) => `S${i}`);
 
 function product(overrides: Partial<Product> = {}): Product {
@@ -32,6 +43,56 @@ function product(overrides: Partial<Product> = {}): Product {
 function stock(products: Product[]): StockState {
   return { shopName: "Boutique", products, movements: [] };
 }
+
+/** Empreinte agrégée d'un jeu de graines : tout changement du déroulé de la simulation la modifie. */
+function fingerprint(): Record<string, number> {
+  const out: Record<string, number> = { products: 0, movements: 0, sale: 0, loss: 0, reception: 0, price: 0, threshold: 0, quantity: 0, todayReceptions: 0 };
+  for (const seed of SEEDS) {
+    const s = generateStock(createRng(seed), TODAY);
+    out.products += s.products.length;
+    out.movements += s.movements.length;
+    for (const m of s.movements) {
+      out[m.reason]++;
+      if (m.reason === "reception" && m.date === TODAY) out.todayReceptions++;
+    }
+    for (const p of s.products) {
+      out.price += p.unitPrice;
+      out.threshold += p.threshold;
+      out.quantity += p.quantity;
+    }
+  }
+  return out;
+}
+
+describe("generateStock (valeurs de référence)", () => {
+  it("numérote produits (p1…), références, emplacements et mouvements (m1…) au format attendu", () => {
+    for (const seed of SEEDS) {
+      const s = generateStock(createRng(seed), TODAY);
+      expect(s.products.map((p) => p.id)).toEqual(s.products.map((_, i) => `p${i + 1}`));
+      for (const [i, p] of s.products.entries()) {
+        expect(p.sku).toMatch(new RegExp(`^[A-Z]{3}-[1-9]${String(i + 1).padStart(3, "0")}$`));
+        expect(p.location).toMatch(/^Allée [A-D] · Étagère [1-6]$/);
+      }
+      expect(s.movements.map((m) => m.id).sort()).toEqual(s.movements.map((_, i) => `m${i + 1}`).sort());
+      // Les mouvements sont rendus du plus récent au plus ancien : les numéros décroissent.
+      expect(s.movements[0].id).toBe(`m${s.movements.length}`);
+      expect(s.movements.at(-1)!.id).toBe("m1");
+    }
+  });
+
+  it("simule les trente derniers jours, jusqu'à aujourd'hui compris, sans réception le jour même", () => {
+    for (const seed of SEEDS) {
+      const s = generateStock(createRng(seed), TODAY);
+      expect(s.movements.some((m) => m.date === TODAY)).toBe(true);
+      expect(s.movements.some((m) => m.date === "2026-09-15")).toBe(true);
+      expect(s.movements.some((m) => m.reason === "reception" && m.date === TODAY)).toBe(false);
+    }
+  });
+
+  it("reste conforme à l'empreinte de référence", () => {
+    expect(fingerprint()).toEqual(EXPECTED);
+  });
+});
 
 describe("generateStock", () => {
   it("est déterministe pour une graine donnée", () => {

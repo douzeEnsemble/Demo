@@ -60,6 +60,22 @@ describe("generatePoll", () => {
     expect(kinds).toEqual(new Set([true, false]));
   });
 
+  it("numérote les options o1, o2… et ne permet plusieurs choix que dans les scénarios annonçant un maximum", () => {
+    for (const seed of SEEDS) {
+      const p = generatePoll(createRng(seed), TODAY);
+      expect(p.options.map((o) => o.id)).toEqual(p.options.map((_, i) => `o${i + 1}`));
+      expect(p.multiple).toBe(p.description.includes("au maximum"));
+    }
+  });
+
+  it("en choix multiples, les votants cochent plusieurs options distinctes", () => {
+    const multipleVotes = SEEDS.map((s) => generatePoll(createRng(s), TODAY))
+      .filter((p) => p.multiple)
+      .flatMap((p) => p.votes);
+    expect(multipleVotes.some((v) => v.choices.length >= 2)).toBe(true);
+    for (const v of multipleVotes) expect(new Set(v.choices).size).toBe(v.choices.length);
+  });
+
   it("dégage le plus souvent un favori net (résultats non uniformes)", () => {
     let contrasted = 0;
     for (const seed of SEEDS) {

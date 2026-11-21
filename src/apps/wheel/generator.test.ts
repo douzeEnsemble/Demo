@@ -59,6 +59,15 @@ describe("generateWheel", () => {
   });
 });
 
+describe("generateWheel (identifiants)", () => {
+  it("numérote les cases e1, e2…", () => {
+    for (const seed of SEEDS) {
+      const { entries } = generateWheel(createRng(seed), TODAY);
+      expect(entries.map((e) => e.id)).toEqual(entries.map((_, i) => `e${i + 1}`));
+    }
+  });
+});
+
 describe("segmentAt", () => {
   it("rotation nulle : le pointeur est au début du segment 0", () => {
     expect(segmentAt(0, 4)).toBe(0);
@@ -121,6 +130,7 @@ describe("addEntry", () => {
   it("refuse le vide, les doublons (casse ignorée), le trop long et la roue pleine", () => {
     expect(addEntry(state([]), "   ", "x")).toBe("empty");
     expect(addEntry(state(["Léa"]), "LÉA", "x")).toBe("duplicate");
+    expect(addEntry(state(["Hugo", "Léa", "Zoé"]), "LÉA", "x")).toBe("duplicate");
     expect(addEntry(state([]), "a".repeat(MAX_LABEL_LENGTH + 1), "x")).toBe("tooLong");
     expect(addEntry(state([]), "a".repeat(MAX_LABEL_LENGTH), "x")).not.toBe("tooLong");
     const full = state(Array.from({ length: MAX_ENTRIES }, (_, i) => `n${i}`));
