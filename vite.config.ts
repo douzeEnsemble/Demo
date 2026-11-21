@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { appVersion } from "./.github/scripts/app-version.mjs";
 
 // "/" en local ; sous-chemin du dépôt (ex: "/demo/") sur GitHub Pages, où
 // l'app est servie depuis un dépôt de projet plutôt qu'un domaine dédié —
@@ -13,4 +14,6 @@ const base = process.env.VITE_BASE_PATH || "/";
 
 export default defineConfig({
   base,
+  // Dernier tag v* (VER-09) ; le checkout de CI doit avoir l'historique (fetch-depth: 0).
+  define: { __APP_VERSION__: JSON.stringify(appVersion()) },
 });

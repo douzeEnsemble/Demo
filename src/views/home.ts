@@ -31,6 +31,7 @@ export function mountHomeView(root: HTMLElement, navigate: (path: string) => voi
         Chaque démo génère son propre jeu de données à partir d'une graine visible dans l'URL :
         rien n'est envoyé ni enregistré sur un serveur, et « Nouvelles données » en tire un autre.
       </p>
+      <p class="home-version">Version ${escapeHtml(__APP_VERSION__)}</p>
     </div>
   `;
   wirePreferenceToggles(root.querySelector(".home-toggles")!);
