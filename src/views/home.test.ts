@@ -20,6 +20,11 @@ describe("mountHomeView", () => {
     expect(root.querySelector("#theme-toggle")).not.toBeNull();
   });
 
+  it("affiche la version injectée à la construction (VER-09)", () => {
+    mountHomeView(root, () => {});
+    expect(root.querySelector(".home-version")!.textContent).toBe("Version v1.2.3-test");
+  });
+
   it("navigue sans recharger sur un clic simple", () => {
     const navigate = vi.fn();
     mountHomeView(root, navigate);
