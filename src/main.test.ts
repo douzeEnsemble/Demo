@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import type { DemoApp, DemoContext } from "./apps";
+import type { DemoApp } from "./apps";
+import type { DemoContext } from "./apps/types";
 
 type Navigate = (path: string, replace?: boolean) => void;
 let capturedNavigate: Navigate | undefined;

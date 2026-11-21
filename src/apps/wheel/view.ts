@@ -1,4 +1,4 @@
-import type { DemoContext } from "../../apps";
+import type { DemoContext } from "../types";
 import { escapeHtml } from "../../lib/dom";
 import { formatShortDate } from "../../lib/format";
 import { icons } from "../../lib/icons";
