@@ -8,12 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm install
 
 npm run dev            # vite dev
-npm run lint           # oxlint --deny-warnings
+npm run lint           # oxlint --deny-warnings && depcruise src (règles d'architecture, voir doc/architecture.md)
 npm run typecheck      # tsc --noEmit (un seul projet : il n'y a pas de code serveur)
 npm run test           # vitest run (sans couverture)
 npm run test:watch     # vitest en mode watch
 npm run test:coverage  # vitest run --coverage — seuils 100% sur tout src/
-npm run test:mutation  # stryker run — mutation testing sur la seule logique pure (voir Tests)
+npm run test:mutation  # stryker run — mutation testing sur la seule logique pure, seuil 100 % (voir Tests) ; `MUTATE=src/lib/seed.ts npx stryker run` pour un seul module
 npm run test:e2e       # playwright test — démarre lui-même `vite dev` (voir playwright.config.ts)
 npm run build          # npm run typecheck && vite build (sortie : dist/)
 npm run preview        # vite preview
@@ -27,7 +27,7 @@ npx vitest run -t "nom du test"
 npx playwright test e2e/apps.spec.ts -g "nom du test"
 ```
 
-Avant de pousser : lint, typecheck, test:coverage, test:mutation et test:e2e — la CI les lance en jobs indépendants et chacun bloque le déploiement.
+Avant de pousser : lint, typecheck, test:coverage et test:e2e (et test:mutation sur les modules touchés) — la CI les lance en jobs indépendants et chacun bloque le déploiement. Hook de commit conventionnel : `git config core.hooksPath .githooks`.
 
 ## Architecture
 
@@ -56,13 +56,16 @@ Thème (`src/lib/theme.ts`) et accessibilité (`src/lib/accessibilityPreference.
 
 ### CI/CD
 
-- `ci.yml` : lint, typecheck, tests + couverture, e2e, audit, mutation testing ; `build` dépend des quatre premiers. Sur une PR, `dist/` est uploadé comme artefact de prévisualisation.
-- `pages.yml` (GitHub Pages, `VITE_BASE_PATH=/<dépôt>/`, `404.html` = copie d'`index.html` pour le repli SPA : ouvrir directement `/roue?seed=…` sert l'app) se déclenche via `workflow_run` après une CI verte sur `main`, jamais sur un simple push.
-- `codeql.yml` sur push/PR vers `main` et chaque semaine.
+- `ci.yml` : lint, typecheck, tests + couverture, e2e (dont axe-core, `e2e/a11y.spec.ts`), audit, mutation ; `build` dépend de tous. Mutation en trois jobs (plan → un job par module → synthèse « Mutation testing (logique pure) », seul check requis) : sur une PR, seuls les modules touchés ; la nuit (`schedule`), tous ; push sur `main`, aucun (MUT-10). Objectif : 10 min sur PR et push, la nuit n'est pas bornée. Sur une PR, `dist/` est uploadé comme artefact de prévisualisation.
+- `pages.yml` (GitHub Pages, `VITE_BASE_PATH=/<dépôt>/`, `404.html` = copie d'`index.html` pour le repli SPA : ouvrir directement `/roue?seed=…` sert l'app) se déclenche via `workflow_run` après une CI verte sur `main`, jamais sur un simple push. Il attend la release du commit (`wait-release.sh`) pour que la version affichée soit le bon tag.
+- `release.yml` (semantic-release) crée tag et release à chaque push sur `main` d'après les commits conventionnels ; `conventional_commits.yml` contrôle titre de PR et commits. Aucun numéro de version écrit à la main : `vite.config.ts` injecte le dernier tag `v*` (`__APP_VERSION__`, affiché au pied de l'accueil).
+- `codeql.yml`, `audit.yml` (lundi), `node-updates.yml` et `major-updates.yml` (secret `UPDATE_TOKEN`), `dependabot.yml`. Toutes les actions sont épinglées par SHA.
+- Ruleset : `.github/rulesets/main.json`, appliqué par `apply-rulesets.sh` ; réglages du dépôt (auto-merge, rebase seul) : GIT-08 du guide `dev-good-practices`.
+- `doc/` : `architecture.md` (règles exécutables), `codage.md` (conventions), `improvement.md` (backlog).
 
 ### Tests
 
 - Couverture 100% sur tout `src/` (hors `*.test.ts` et `types.ts`). Les tests DOM tournent sous `jsdom`, activé par fichier (`// @vitest-environment jsdom`). Les tests de vue utilisent le vrai générateur pour un premier rendu « de bout en bout », puis `vi.spyOn(generator, "generateXxx")` pour imposer un état de départ précis (états limites : rupture, réservations closes, historique vide…).
 - `src/main.test.ts` est un scénario séquentiel unique (le module à effets de bord ne s'importe qu'une fois), mocks du registre, de l'en-tête et de `randomSeed`.
-- Mutation testing (`stryker.config.mjs`) limité à la logique pure : `src/lib/{random,seed,fake,format}.ts` et `src/apps/*/generator.ts`, runner `command` avec la liste explicite des fichiers de test correspondants (à tenir synchronisée avec `mutate`). Les réservoirs de chaînes (prénoms, catalogues, scénarios) sont exclus par des commentaires `// Stryker disable … // Stryker restore all` : seul le contenu exact de ces listes est exclu, pas la logique qui les utilise.
+- Mutation testing (`stryker.config.mjs`), seuils 100 %, limité à la logique pure : `src/lib/{random,seed,fake,format}.ts` et `src/apps/*/generator.ts`. La table `targets` associe chaque module à ses fichiers de test (runner `command`) ; la CI en déduit un job par module : une nouvelle démo s'y ajoute. Les réservoirs de chaînes (prénoms, catalogues, scénarios) sont exclus par des commentaires `// Stryker disable … // Stryker restore all` : seul le contenu exact de ces listes est exclu, pas la logique qui les utilise.
 - e2e (`e2e/*.spec.ts`) contre `vite dev`, avec des graines fixes (`?seed=E2E001`) pour des parcours déterministes.
