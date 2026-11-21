@@ -5,12 +5,13 @@ on:
   push:
     branches:
       - main
-
-permissions:
-  contents: read
+  # Contrôle complet la nuit : la mutation de tous les modules, que les PR ne refont pas.
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
@@ -18,8 +19,8 @@ jobs:
     name: Linter
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: npm
@@ -30,8 +31,8 @@ jobs:
     name: Vérification des types
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: npm
@@ -42,15 +43,15 @@ jobs:
     name: Tests unitaires + couverture
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run test:coverage
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage-report
           path: coverage/
@@ -60,8 +61,8 @@ jobs:
     name: Tests fonctionnels (Playwright)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: npm
@@ -69,60 +70,115 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
 
+  mutation-testing-plan:
+    name: Mutation testing — plan
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      count: ${{ steps.select.outputs.count }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+      # Un job par module, d'après les cibles de stryker.config.mjs.
+      - id: plan
+        run: node .github/scripts/mutation-matrix.mjs
+      # PR : seulement les modules touchés ; nuit : tous ; push sur main : aucun.
+      - id: select
+        run: node .github/scripts/mutation-select.mjs
+        env:
+          MATRIX: ${{ steps.plan.outputs.matrix }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+
+  mutation-testing-module:
+    name: Mutation testing — ${{ matrix.name }}
+    needs: mutation-testing-plan
+    if: needs.mutation-testing-plan.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.mutation-testing-plan.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Seuil bloquant à 100 % : un seul mutant survivant fait échouer le job.
+      - run: npx stryker run
+        env:
+          MUTATE: ${{ matrix.mutate }}
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: mutation-report-${{ matrix.name }}
+          path: mutation-report/
+          retention-days: 14
+
+  # Un seul check stable « Mutation testing (logique pure) » pour la protection
+  # de branche, quel que soit le nombre de modules.
+  mutation-testing:
+    name: Mutation testing (logique pure)
+    needs: [mutation-testing-plan, mutation-testing-module]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tous les modules à 100 %
+        env:
+          PLAN: ${{ needs.mutation-testing-plan.result }}
+          RESULT: ${{ needs.mutation-testing-module.result }}
+        run: |
+          # « skipped » : aucun module concerné par la PR (ou push sur main).
+          if [ "$PLAN" != "success" ] || { [ "$RESULT" != "success" ] && [ "$RESULT" != "skipped" ]; }; then
+            echo "::error::Mutation testing : au moins un module sous 100 % ($RESULT)."
+            exit 1
+          fi
+
   audit:
     name: Audit des dépendances
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm audit --audit-level=high
-
-  mutation-testing:
-    name: Mutation testing (logique pure)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run test:mutation
-      - if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: mutation-report
-          path: mutation-report/
-          retention-days: 14
+      - name: Audit des dépendances de production
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Audit complet (production + développement)
+        run: node .github/scripts/audit-check.mjs --level=high
 
   build:
     name: Build de production
-    needs: [lint, typecheck, unit-tests, e2e-tests]
+    needs: [lint, typecheck, unit-tests, e2e-tests, mutation-testing, audit]
+    # Sans cette condition, `success()` implicite exige aussi que les modules de mutation (ancêtres,
+    # « skipped » quand aucun n'est concerné) aient réussi : le build serait sauté (MUT-10).
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run build
-      # Pas un vrai déploiement de preview (GitHub Pages ne sert qu'une
-      # version à la fois) : juste de quoi
-      # télécharger et lancer le build en local pour relire une PR sans
-      # attendre le merge.
+      # Pas un vrai déploiement de preview (GitHub Pages ne sert qu'une version à la fois) :
+      # de quoi télécharger et lancer le build en local pour relire une PR sans attendre la fusion.
       - if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pr-build-preview
           path: dist
